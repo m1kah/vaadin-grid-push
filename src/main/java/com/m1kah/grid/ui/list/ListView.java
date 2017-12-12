@@ -88,6 +88,19 @@ public class ListView extends VerticalLayout implements View, BroadcastListener 
 
     @Override
     public void onTransactionDataUpdate(List<String> updatedTransactionIds) {
+        // Vaadin UI will expire after 3 heartbeats are missed. By default
+        // heartbeats occur every 5 minutes. After 15 minutes this view
+        // will not be attached anymore. So there is no need to listen
+        // anymore.
+        //
+        // Note that only guaranteed way of getting notification about
+        // browser closure is to add javascript listener to window.onbeforeunload
+        // and notify Vaadin application from there. But for most cases
+        // just letting heartbeats to timeout is enough.
+        if (!isAttached()) {
+            Broadcaster.removeBroadcastListener(this);
+            return;
+        }
         // Note that we are calling getUI() here and that will target
         // ListView object which is in UI inside some user's session.
         // Updates form background threads must have some way to access

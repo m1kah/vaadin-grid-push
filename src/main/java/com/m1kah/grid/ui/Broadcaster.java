@@ -25,8 +25,10 @@ package com.m1kah.grid.ui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,8 +42,15 @@ public class Broadcaster {
      *
      * Each browser tab and window is an UI object. We can update everyone
      * who is connected to the server by iterating through UI objects.
+     *
+     * BroadcastListeners should be coded so that they remove themselves
+     * from Broadcaster when they do not want to get events anymore. However,
+     * we are using weak references to listeners anyway. This willm
+     * make sure that we are not "leaking" views that should get
+     * closed. Note that views can be around for some time, that is
+     * until Vaadin heartbeats time out.
      */
-    private static final List<BroadcastListener> listeners = Collections.synchronizedList(new ArrayList<>());
+    private static final List<WeakReference<BroadcastListener>> listeners = Collections.synchronizedList(new ArrayList<>());
 
     /**
      * {@see https://vaadin.com/docs/-/part/framework/advanced/advanced-push.html}
@@ -49,20 +58,36 @@ public class Broadcaster {
     private static final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     public static void notifyUis(List<String> updatedTransactionIds) {
-        for (BroadcastListener listener : listeners) {
-            executorService.execute(() -> listener.onTransactionDataUpdate(updatedTransactionIds));
+        Iterator<WeakReference<BroadcastListener>> i = listeners.iterator();
+        while (i.hasNext()) {
+            WeakReference<BroadcastListener> reference = i.next();
+            BroadcastListener listener = reference.get();
+            if (listener == null) {
+                i.remove();
+                logger.info("Removed garbage collected listener");
+                continue;
+            } else {
+                executorService.execute(() -> listener.onTransactionDataUpdate(updatedTransactionIds));
+            }
         }
         logger.debug("Notified {} broadcast listeners", listeners.size());
     }
 
     public static void addBroadcastListener(BroadcastListener listener) {
-        listeners.add(listener);
+        listeners.add(new WeakReference<>(listener));
         logger.info("Broadcast listener added: {}", listener);
     }
 
     public static void removeBroadcastListener(BroadcastListener listener) {
-        listeners.remove(listener);
-        logger.info("Broadcast listener removed: {}", listener);
+        Iterator<WeakReference<BroadcastListener>> i = listeners.iterator();
+        while (i.hasNext()) {
+            if (i.next().get() == listener) {
+                i.remove();
+                logger.info("Broadcast listener removed: {}", listener);
+                return;
+            }
+        }
+        throw new IllegalStateException("Listener was not removed");
     }
 
     public static void cancelUpdates() {
