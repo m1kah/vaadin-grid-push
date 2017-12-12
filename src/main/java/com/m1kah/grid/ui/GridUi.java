@@ -22,100 +22,69 @@
 
 package com.m1kah.grid.ui;
 
-import com.m1kah.grid.data.Transaction;
-import com.m1kah.grid.data.TransactionRepository;
+import com.m1kah.grid.ui.about.AboutView;
+import com.m1kah.grid.ui.list.ListView;
 import com.vaadin.annotations.Push;
-import com.vaadin.data.provider.ListDataProvider;
+import com.vaadin.navigator.Navigator;
 import com.vaadin.server.VaadinRequest;
-import com.vaadin.ui.Grid;
+import com.vaadin.ui.Button;
+import com.vaadin.ui.Component;
+import com.vaadin.ui.CssLayout;
+import com.vaadin.ui.HorizontalLayout;
+import com.vaadin.ui.Label;
 import com.vaadin.ui.UI;
 import com.vaadin.ui.VerticalLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-
 @Push
-public class GridUi extends UI implements BroadcastListener {
+public class GridUi extends UI {
     private static final Logger logger = LoggerFactory.getLogger(GridUi.class);
-    private Grid<Transaction> grid;
-    private VerticalLayout container;
-    private ListDataProvider<Transaction> dataProvider;
-    private List<Transaction> dataList;
+    private CssLayout viewLayout;
+    private Navigator navigator;
 
     @Override
     protected void init(VaadinRequest request) {
-        initGrid();
-        initContainer();
-        initData();
-        initReceiveData();
-        setContent(container);
+        initLayout();
+        initNavigator();
         logger.info("UI created");
     }
 
-    @Override
-    public void detach() {
-        Broadcaster.removeBroadcastListener(this);
-        super.detach();
+    private void initNavigator() {
+        navigator = new Navigator(this, viewLayout);
+        navigator.addView("", new ListView());
+        navigator.addView("about", new AboutView());
     }
 
-    private void initReceiveData() {
-        Broadcaster.addBroadcastListener(this);
+    private void initLayout() {
+        HorizontalLayout root = new HorizontalLayout();
+        root.setSizeFull();
+        Component menu = createMenu();
+        root.addComponent(menu);
+        viewLayout = new CssLayout();
+        viewLayout.setSizeFull();
+        root.addComponent(viewLayout);
+        root.setExpandRatio(viewLayout, 1);
+        setContent(root);
     }
 
-    private void initData() {
-        dataList = new ArrayList<>(TransactionRepository.get().findAll());
-        dataProvider = new ListDataProvider<>(dataList);
-        grid.setDataProvider(dataProvider);
-        updateCaption();
+    private Component createMenu() {
+        VerticalLayout menuLayout = new VerticalLayout();
+        menuLayout.addComponent(new Label("Menu"));
+        menuLayout.setMargin(true);
+        menuLayout.setSpacing(true);
+        Button listButton = new Button("Grid");
+        listButton.addClickListener(navigateTo(""));
+        menuLayout.addComponent(listButton);
+        Button aboutButton = new Button("About");
+        aboutButton.addClickListener(navigateTo("about"));
+        menuLayout.addComponent(aboutButton);
+        menuLayout.setWidth("120px");
+        return menuLayout;
     }
 
-    private void initContainer() {
-        container = new VerticalLayout(grid);
-        container.setMargin(true);
-        container.setSpacing(true);
+    private Button.ClickListener navigateTo(String viewName) {
+        return event -> navigator.navigateTo(viewName);
     }
 
-    private void initGrid() {
-        grid = new Grid<>("Example Grid");
-        grid.setHeightByRows(8);
-        grid.addColumn(Transaction::getName)
-                .setCaption("Name");
-        grid.addColumn(Transaction::getAmount)
-                .setCaption("Amount");
-        grid.addColumn(Transaction::formattedUpdateTime)
-                .setCaption("Updated");
-    }
-
-    @Override
-    public void onTransactionDataUpdate(List<String> updatedTransactionIds) {
-        access(() -> {
-            // This code is executed by a background thread (which has delegated
-            // updated to thread owned by broadcaster). We are only refreshing
-            // updated rows or adding new rows for new data. Another option
-            // is to simply reload all data in the grid.
-            //
-            // If more logic is added here then only UIs that need updates
-            // can be updated. Maybe only some of the views need pushed
-            // updates. Maybe the updated data is not visible in the view.
-            // There are many options.
-            for (String updatedTransactionId : updatedTransactionIds) {
-                Transaction transaction = TransactionRepository.get().find(updatedTransactionId);
-                if (!dataList.contains(transaction)) {
-                    dataList.add(transaction);
-                    // This is needed to refresh the rows in grid. Otherwise it does
-                    // not notice that a new row has been added.
-                    grid.clearSortOrder();
-                    updateCaption();
-                } else {
-                    dataProvider.refreshItem(transaction);
-                }
-            }
-        });
-    }
-
-    private void updateCaption() {
-        grid.setCaption("Example Grid with " + dataList.size() + " precious stones");
-    }
 }
